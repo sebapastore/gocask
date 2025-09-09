@@ -32,7 +32,7 @@ func Run(args []string, output io.Writer) error {
 	switch command {
 	case "set":
 		if len(remaining) < 3 {
-			fmt.Fprintln(output, "Usage: gocask set <key> <value> [--db <database-path>]")
+			_, _ = fmt.Fprintln(output, "Usage: gocask set <key> <value> [--db <database-path>]")
 			return nil
 		}
 		key := remaining[1]
@@ -41,29 +41,29 @@ func Run(args []string, output io.Writer) error {
 		if err := db.Save(); err != nil {
 			return fmt.Errorf("error saving database: %w", err)
 		}
-		fmt.Fprintf(output, "SET key=%s value=%s\n", key, value)
+		_, _ = fmt.Fprintf(output, "SET key=%s value=%s\n", key, value)
 
 	case "get":
 		if len(remaining) < 2 {
-			fmt.Fprintln(output, "Usage: gocask get <key> [--db <database-path>]")
+			_, _ = fmt.Fprintln(output, "Usage: gocask get <key> [--db <database-path>]")
 			return nil
 		}
 		key := remaining[1]
 		value, exists := db.Get(key)
 		if !exists {
-			fmt.Fprintf(output, "There is no value for key %s\n", key)
+			_, _ = fmt.Fprintf(output, "There is no value for key %s\n", key)
 		}
-		fmt.Fprintf(output, "The value for key %s is %s\n", key, value)
+		_, _ = fmt.Fprintf(output, "The value for key %s is %s\n", key, value)
 
 	default:
-		fmt.Fprintf(output, "Unknown command: %s\n", command)
+		_, _ = fmt.Fprintf(output, "Unknown command: %s\n", command)
 	}
 
 	return nil
 }
 
 func printUsage(output io.Writer) {
-	fmt.Fprintln(output, `
+	_, _ = fmt.Fprintln(output, `
   Usage: gocask [options] <command> [args]
 
   Options:

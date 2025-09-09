@@ -19,7 +19,13 @@ func NewDatabase(path string) (*Database, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create database file: %w", err)
 		}
-		defer file.Close()
+
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to close file %s: %v\n", path, err)
+			}
+		}()
+
 		fmt.Println("Database created at", path)
 	}
 
@@ -33,7 +39,12 @@ func NewDatabase(path string) (*Database, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	defer file.Close()
+
+	defer func() {
+		if err := file.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close file %s: %v\n", path, err)
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -61,7 +72,12 @@ func (db *Database) Save() error {
 	if err != nil {
 		return fmt.Errorf("failed to save database: %w", err)
 	}
-	defer file.Close()
+
+	defer func() {
+		if err := file.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close file %s: %v\n", db.path, err)
+		}
+	}()
 
 	for k, v := range db.data {
 		_, err := fmt.Fprintf(file, "%s:%s\n", k, v)
