@@ -38,6 +38,14 @@ golangci-lint run
 
 This project also has a GitHub Actions CI workflow that runs tests and lint checks on every push and pull request to `main`.
 
+## Todo / Next Steps
+
+- Review and refactor the code if needed before continuing.
+- Support multiple database files with a maximum file size (configurable?).
+- Implement entry deletions.
+- Implement the merge functionality of Bitcask.
+- Prevent data loss during merge.
+
 ## References
 
 * [Bitcask: A Log-Structured Hash Table for Fast Key/Value Data](https://riak.com/assets/bitcask-intro.pdf)
