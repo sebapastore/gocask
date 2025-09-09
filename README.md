@@ -24,13 +24,32 @@ git config core.hooksPath .githooks
 
 ## Development
 
-Run the test suite:
+### Running the CLI
+
+You can interact with the Bitcask database using `go run`:
+
+```bash
+Usage: go run cmd/gocask/main.go [options] <command> [args]
+
+Options:
+  --db <path>     Path to the database (default "./database")
+
+Commands:
+  set <key> <value>     Store a value
+  get <key>             Retrieve a value
+
+Examples:
+  go run cmd/gocask/main.go set name Seba --db ./mydb
+  go run cmd/gocask/main.go get name --db ./mydb
+```
+
+### Run the test suite:
 
 ```bash
 go test ./... -v
 ```
 
-Run the linter:
+### Run the linter:
 
 ```bash
 golangci-lint run
@@ -45,6 +64,7 @@ This project also has a GitHub Actions CI workflow that runs tests and lint chec
 - Implement entry deletions.
 - Implement the merge functionality of Bitcask.
 - Prevent data loss during merge.
+- Consider building a network server and support RESP protocol. 
 
 ## References
 
