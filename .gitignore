@@ -21,3 +21,6 @@
 # macOS
 .DS_Store
 
+# Default database
+database
+
