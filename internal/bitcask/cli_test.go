@@ -27,7 +27,7 @@ func TestRunSetCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	val, ok := db.Get("foo")
+	val, ok, _ := db.Get("foo")
 	if !ok || val != "bar" {
 		t.Errorf("expected foo=bar, got foo=%s", val)
 	}
@@ -40,10 +40,7 @@ func TestRunGetCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db.Set("hello", "world")
-	if err := db.Save(); err != nil {
-		t.Fatal(err)
-	}
+	_ = db.Set("hello", "world")
 
 	var buf bytes.Buffer
 	args := []string{"--db", tmpFile, "get", "hello"}

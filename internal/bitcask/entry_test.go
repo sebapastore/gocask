@@ -8,8 +8,8 @@ import (
 )
 
 func TestEntryEncode(t *testing.T) {
-	key := []byte("mykey")
-	value := []byte("myvalue")
+	key := "mykey"
+	value := "myvalue"
 
 	e := &Entry{
 		Timestamp: 1694280000, // fixed timestamp for deterministic test
@@ -35,10 +35,24 @@ func TestEntryEncode(t *testing.T) {
 	}
 
 	// Check key and value are inside
-	if !bytes.Contains(content, key) {
+	if !bytes.Contains(content, []byte(key)) {
 		t.Fatal("Encoded content missing key")
 	}
-	if !bytes.Contains(content, value) {
+	if !bytes.Contains(content, []byte(value)) {
 		t.Fatal("Encoded content missing value")
+	}
+}
+
+func TestEntryHeaderLength(t *testing.T) {
+	key := "mykey"
+	e := &Entry{
+		Key: key,
+	}
+
+	expected := 4 + 8 + 4 + 4 + len(key) // CRC + Timestamp + KeySize + ValueSize + Key bytes
+	got := e.HeaderLength()
+
+	if got != expected {
+		t.Fatalf("HeaderLength() = %d; want %d", got, expected)
 	}
 }

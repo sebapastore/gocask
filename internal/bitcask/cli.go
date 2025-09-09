@@ -37,9 +37,8 @@ func Run(args []string, output io.Writer) error {
 		}
 		key := remaining[1]
 		value := remaining[2]
-		db.Set(key, value)
-		if err := db.Save(); err != nil {
-			return fmt.Errorf("error saving database: %w", err)
+		if err := db.Set(key, value); err != nil {
+			return fmt.Errorf("failed to set value: %w", err)
 		}
 		_, _ = fmt.Fprintf(output, "SET key=%s value=%s\n", key, value)
 
@@ -49,9 +48,14 @@ func Run(args []string, output io.Writer) error {
 			return nil
 		}
 		key := remaining[1]
-		value, exists := db.Get(key)
+		value, exists, err := db.Get(key)
+		if err != nil {
+			return fmt.Errorf("failed to get value: %w", err)
+		}
+
 		if !exists {
 			_, _ = fmt.Fprintf(output, "There is no value for key %s\n", key)
+			return nil
 		}
 		_, _ = fmt.Fprintf(output, "The value for key %s is %s\n", key, value)
 

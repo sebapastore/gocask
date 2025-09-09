@@ -40,5 +40,5 @@ This project also has a GitHub Actions CI workflow that runs tests and lint chec
 
 ## References
 
-* [Bitcask: A Log-Structured Hash Table for Fast Key/Value Data](https://riak.com/assets/bitcask-intro.pdf) (original paper)
-* [Coding Challenges](https://codingchallenges.substack.com/) by John Crickett
+* [Bitcask: A Log-Structured Hash Table for Fast Key/Value Data](https://riak.com/assets/bitcask-intro.pdf)
+* [Coding Challenges](https://codingchallenges.substack.com/)
