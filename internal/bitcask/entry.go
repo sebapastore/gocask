@@ -2,23 +2,50 @@ package bitcask
 
 import (
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"time"
 )
 
-// timestamp (64 bits) + keySize (32 bits) + valueSize (32 bits)
-const headerSize = 16
+const (
+	crcSize       = 4 // 4 bits for CRC
+	timestampSize = 8 // 64 bits for timestamp
+	keySizeSize   = 4 // 32 bits for key size
+	valueSizeSize = 4 // 32 bits for value size
+)
+
+const metadataSize = timestampSize + keySizeSize + valueSizeSize
+const headerSize = crcSize + metadataSize
+
+const crcOffset = 0
+const crcEnd = crcOffset + crcSize
+const timestampOffset = crcSize
+const timestampEnd = timestampOffset + timestampSize
+const keySizeOffset = crcSize + timestampSize
+const keySizeEnd = keySizeOffset + keySizeSize
+const valueSizeOffset = crcSize + timestampSize + keySizeSize
+const valueSizeEnd = valueSizeOffset + valueSizeSize
+const keyOffset = crcSize + timestampSize + keySizeSize + valueSizeSize
 
 type Entry struct {
-	Timestamp int64
+	Timestamp uint64
 	Key       string
 	Value     string
+}
+
+type DecodedEntry struct {
+	Key         string
+	Timestamp   uint64
+	KeySize     uint32
+	ValueSize   uint32
+	EntrySize   uint32
+	ValueOffset uint32
 }
 
 // NewEntry creates a new entry with the current timestamp.
 func NewEntry(key string, value string) *Entry {
 	return &Entry{
-		Timestamp: time.Now().Unix(),
+		Timestamp: uint64(time.Now().Unix()),
 		Key:       key,
 		Value:     value,
 	}
@@ -26,52 +53,60 @@ func NewEntry(key string, value string) *Entry {
 
 // Encode serializes the entry into bytes (CRC + payload).
 func (e *Entry) Encode() ([]byte, error) {
-	// CRC + header + key + value
-	totalSize := 4 + headerSize + e.KeySize() + e.ValueSize()
+	totalSize := headerSize + e.KeySize() + e.ValueSize()
 	buf := make([]byte, totalSize)
 
-	// fill payload directly into buf[4:]
-	e.fillPayload(buf[4:])
+	// metadata
+	binary.LittleEndian.PutUint64(buf[timestampOffset:timestampEnd], uint64(e.Timestamp))
+	binary.LittleEndian.PutUint32(buf[keySizeOffset:keySizeEnd], uint32(e.KeySize()))
+	binary.LittleEndian.PutUint32(buf[valueSizeOffset:valueSizeEnd], uint32(e.ValueSize()))
+
+	// key and value
+	copy(buf[keyOffset:], e.Key)
+	copy(buf[e.ValueOffset():], []byte(e.Value))
 
 	// calculate CRC over payload
-	crc := crc32.ChecksumIEEE(buf[4:])
-	binary.LittleEndian.PutUint32(buf[0:4], crc)
+	crc := crc32.ChecksumIEEE(buf[crcEnd:])
+	binary.LittleEndian.PutUint32(buf[0:crcEnd], crc)
 
 	return buf, nil
 }
 
-// fillPayload writes the payload (header + key + value) into buf.
-// buf must be pre-allocated with the correct size.
-func (e *Entry) fillPayload(buf []byte) {
-	// header
-	binary.LittleEndian.PutUint64(buf[0:8], uint64(e.Timestamp))
-	binary.LittleEndian.PutUint32(buf[8:12], uint32(e.KeySize()))
-	binary.LittleEndian.PutUint32(buf[12:16], uint32(e.ValueSize()))
+func Decode(headerBuf, kvBuf []byte, keySize, valueSize uint32) (*DecodedEntry, error) {
+	crc := binary.LittleEndian.Uint32(headerBuf[crcOffset:])
+	key := string(kvBuf[0:keySize])
 
-	// key
-	copy(buf[headerSize:], e.Key)
+	payload := make([]byte, metadataSize+len(kvBuf))
+	copy(payload, headerBuf[crcEnd:])
+	copy(payload[metadataSize:], kvBuf)
 
-	// value
-	copy(buf[headerSize+e.KeySize():], e.Value)
+	if crc32.ChecksumIEEE(payload) != crc {
+		return nil, fmt.Errorf("CRC mismatch for key %s", key)
+	}
+
+	timestamp := binary.LittleEndian.Uint64(headerBuf[timestampOffset:timestampEnd])
+	valueOffset := headerSize + keySize
+
+	decodedEntry := DecodedEntry{
+		key,
+		timestamp,
+		keySize,
+		valueSize,
+		valueOffset + valueSize,
+		valueOffset,
+	}
+
+	return &decodedEntry, nil
 }
 
-// encodePayload builds and returns only the payload (header + key + value).
-func (e *Entry) EncodePayload() []byte {
-	payload := make([]byte, headerSize+e.KeySize()+e.ValueSize())
-	e.fillPayload(payload)
-	return payload
+func (e *Entry) KeySize() int {
+	return len(e.Key)
 }
 
-func (e *Entry) KeySize() int32 {
-	return int32(len(e.Key))
+func (e *Entry) ValueSize() int {
+	return len(e.Value)
 }
 
-func (e *Entry) ValueSize() int32 {
-	return int32(len(e.Value))
-}
-
-// ValueOffset returns the length in bytes of the header before the value
 func (e *Entry) ValueOffset() int64 {
-	// CRC (4 bytes) + Timestamp (8 bytes) + KeySize (4 bytes) + ValueSize (4 bytes) + Key bytes
-	return 4 + 8 + 4 + 4 + int64(e.KeySize())
+	return headerSize + int64(e.KeySize())
 }

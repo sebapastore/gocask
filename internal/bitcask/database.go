@@ -4,16 +4,15 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"hash/crc32"
 	"io"
 	"os"
 )
 
 type KeydirEntry struct {
-	FileID    int
-	ValuePos  int64
-	ValueSize int32
-	Timestamp int64
+	FileID    uint32
+	ValuePos  uint64
+	ValueSize uint32
+	Timestamp uint64
 }
 
 type Database struct {
@@ -44,100 +43,56 @@ func NewDatabase(path string) (*Database, error) {
 	}
 	defer closeFile(file)
 
-	var offset int64 = 0
+	var offset uint64 = 0
 	reader := bufio.NewReader(file)
 
 	for {
-		entry, n, err := DecodeNextEntry(reader)
+		decodedEntry, err := DecodeNextEntry(reader)
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to decode entry at offset %d: %v\n", offset, err)
 			// skip the corrupted entry by advancing the offset
-			offset += int64(n)
+			offset += uint64(decodedEntry.EntrySize)
 			continue
 		}
+		fmt.Printf("decoded: %d\n", decodedEntry.ValueOffset)
 
-		// Update keydir with file position info
-		db.keydir[entry.Key] = KeydirEntry{
-			FileID:    1, // currently only one file
-			ValuePos:  offset + entry.ValueOffset(),
-			ValueSize: int32(len(entry.Value)),
-			Timestamp: entry.Timestamp,
-		}
+		fileID := uint32(1) // TODO: implement multiple files
 
-		offset += int64(n)
+		fmt.Printf("key dir")
+		db.keydir[decodedEntry.Key] = buildKeydirEntry(fileID, offset, decodedEntry)
+
+		offset += uint64(decodedEntry.EntrySize)
 	}
 
 	return db, nil
 }
 
-func DecodeNextEntry(r io.Reader) (*Entry, int, error) {
-	var crc uint32
-	var timestamp int64
-	var keySize, valueSize int32
-
-	// Keep track of total bytes read
-	totalBytes := 0
-
-	// Read CRC (4 bytes)
-	if err := binary.Read(r, binary.LittleEndian, &crc); err != nil {
-		return nil, totalBytes, err
-	}
-	totalBytes += 4
-
-	// Read Timestamp (8 bytes)
-	if err := binary.Read(r, binary.LittleEndian, &timestamp); err != nil {
-		return nil, totalBytes, err
-	}
-	totalBytes += 8
-
-	// Read KeySize (4 bytes)
-	if err := binary.Read(r, binary.LittleEndian, &keySize); err != nil {
-		return nil, totalBytes, err
-	}
-	totalBytes += 4
-
-	// Read ValueSize (4 bytes)
-	if err := binary.Read(r, binary.LittleEndian, &valueSize); err != nil {
-		return nil, totalBytes, err
-	}
-	totalBytes += 4
-
-	// Read Key
-	keyBytes := make([]byte, keySize)
-	n, err := io.ReadFull(r, keyBytes)
-	if err != nil {
-		return nil, totalBytes, err
-	}
-	totalBytes += n
-
-	// Read Value
-	valueBytes := make([]byte, valueSize)
-	n, err = io.ReadFull(r, valueBytes)
-	if err != nil {
-		return nil, totalBytes, err
-	}
-	totalBytes += n
-
-	entry := &Entry{
-		Timestamp: timestamp,
-		Key:       string(keyBytes),
-		Value:     string(valueBytes),
+func DecodeNextEntry(r io.Reader) (*DecodedEntry, error) {
+	// 1. Read the fixed-size header
+	headerBuf := make([]byte, headerSize)
+	if _, err := io.ReadFull(r, headerBuf); err != nil {
+		return nil, err // Can be io.EOF
 	}
 
-	// Verify CRC
-	payload := entry.EncodePayload()
+	// 2. Extract sizes from the header to know how much more to read
+	keySize := binary.LittleEndian.Uint32(headerBuf[keySizeOffset:])
+	valueSize := binary.LittleEndian.Uint32(headerBuf[valueSizeOffset:])
+
+	// 3. Read the variable-sized key and value
+	kvBuf := make([]byte, keySize+valueSize)
+	if _, err := io.ReadFull(r, kvBuf); err != nil {
+		return nil, err
+	}
+
+	decodedEntry, err := Decode(headerBuf, kvBuf, keySize, valueSize)
 
 	if err != nil {
-		return nil, totalBytes, err
+		return nil, err
 	}
 
-	if crc32.ChecksumIEEE(payload) != crc {
-		return nil, totalBytes, fmt.Errorf("CRC mismatch for key %s", entry.Key)
-	}
-
-	return entry, totalBytes, nil
+	return decodedEntry, nil
 }
 
 func (db *Database) Get(key string) (string, bool, error) {
@@ -154,7 +109,7 @@ func (db *Database) Get(key string) (string, bool, error) {
 	defer closeFile(file)
 
 	// Seek to value position
-	if _, err := file.Seek(meta.ValuePos, io.SeekStart); err != nil {
+	if _, err := file.Seek(int64(meta.ValuePos), io.SeekStart); err != nil {
 		return "", false, fmt.Errorf("failed to seek to value: %w", err)
 	}
 
@@ -196,12 +151,21 @@ func (db *Database) Set(key string, value string) error {
 	// Update keydir
 	db.keydir[key] = KeydirEntry{
 		FileID:    1, //TODO: Handle multiple files
-		ValuePos:  valuePos,
-		ValueSize: int32(len(entry.Value)),
+		ValuePos:  uint64(valuePos),
+		ValueSize: uint32(len(entry.Value)),
 		Timestamp: entry.Timestamp,
 	}
 
 	return nil
+}
+
+func buildKeydirEntry(fileID uint32, entryOffset uint64, decodedEntry *DecodedEntry) KeydirEntry {
+	return KeydirEntry{
+		FileID:    fileID,
+		ValuePos:  entryOffset + headerSize + uint64(decodedEntry.KeySize),
+		ValueSize: decodedEntry.ValueSize,
+		Timestamp: decodedEntry.Timestamp,
+	}
 }
 
 func closeFile(file *os.File) {
