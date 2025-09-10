@@ -80,7 +80,7 @@ func TestDatabaseHandlesMalformedEntries(t *testing.T) {
 	entry2Encoded, _ := entry1.Encode()
 	_, _ = file.Write(entry2Encoded)
 	// Flip a byte in the value portion
-	valueStart := entry2.HeaderLength()
+	valueStart := entry2.ValueOffset()
 	entry2Encoded[valueStart] ^= 0xAA
 
 	entry3Encoded, _ := entry3.Encode()

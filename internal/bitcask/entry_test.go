@@ -43,14 +43,14 @@ func TestEntryEncode(t *testing.T) {
 	}
 }
 
-func TestEntryHeaderLength(t *testing.T) {
+func TestEntryValueOffset(t *testing.T) {
 	key := "mykey"
 	e := &Entry{
 		Key: key,
 	}
 
-	expected := 4 + 8 + 4 + 4 + len(key) // CRC + Timestamp + KeySize + ValueSize + Key bytes
-	got := e.HeaderLength()
+	expected := int64(4 + 8 + 4 + 4 + len(key)) // CRC + Timestamp + KeySize + ValueSize + Key bytes
+	got := e.ValueOffset()
 
 	if got != expected {
 		t.Fatalf("HeaderLength() = %d; want %d", got, expected)

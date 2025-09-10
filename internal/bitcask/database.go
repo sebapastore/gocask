@@ -61,8 +61,8 @@ func NewDatabase(path string) (*Database, error) {
 		// Update keydir with file position info
 		db.keydir[entry.Key] = KeydirEntry{
 			FileID:    1, // currently only one file
-			ValuePos:  offset + int64(entry.HeaderLength()),
-			ValueSize: entry.ValueSize,
+			ValuePos:  offset + entry.ValueOffset(),
+			ValueSize: int32(len(entry.Value)),
 			Timestamp: entry.Timestamp,
 		}
 
@@ -124,12 +124,10 @@ func DecodeNextEntry(r io.Reader) (*Entry, int, error) {
 		Timestamp: timestamp,
 		Key:       string(keyBytes),
 		Value:     string(valueBytes),
-		KeySize:   keySize,
-		ValueSize: valueSize,
 	}
 
 	// Verify CRC
-	payload, err := entry.Payload()
+	payload := entry.EncodePayload()
 
 	if err != nil {
 		return nil, totalBytes, err
@@ -184,7 +182,7 @@ func (db *Database) Set(key string, value string) error {
 	if err != nil {
 		return fmt.Errorf("failed to seek database file: %w", err)
 	}
-	valuePos := fileOffset + int64(entry.HeaderLength())
+	valuePos := fileOffset + entry.ValueOffset()
 
 	// Encode and write
 	data, err := entry.Encode()
@@ -199,7 +197,7 @@ func (db *Database) Set(key string, value string) error {
 	db.keydir[key] = KeydirEntry{
 		FileID:    1, //TODO: Handle multiple files
 		ValuePos:  valuePos,
-		ValueSize: entry.ValueSize,
+		ValueSize: int32(len(entry.Value)),
 		Timestamp: entry.Timestamp,
 	}
 
