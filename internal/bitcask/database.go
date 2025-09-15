@@ -107,6 +107,11 @@ func (db *Database) Set(key string, value string) error {
 
 func (db *Database) loadKeydir() error {
 	var offset uint64 = 0
+
+	if _, err := db.activeFile.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
 	reader := bufio.NewReader(db.activeFile)
 
 	for {
@@ -160,11 +165,5 @@ func buildKeydirEntry(fileID uint32, entryOffset uint64, decodedEntry *DecodedEn
 		ValuePos:  entryOffset + headerSize + uint64(decodedEntry.KeySize),
 		ValueSize: decodedEntry.ValueSize,
 		Timestamp: decodedEntry.Timestamp,
-	}
-}
-
-func closeFile(file *os.File) {
-	if err := file.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to close file %s: %v\n", file.Name(), err)
 	}
 }

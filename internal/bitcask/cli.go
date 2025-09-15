@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func Run(args []string, output io.Writer) error {
+func Run(args []string, input io.Reader, output io.Writer) error {
 	var dbPath string
 	flags := flag.NewFlagSet("gocask", flag.ContinueOnError)
 	flags.SetOutput(output)
@@ -37,11 +37,11 @@ func Run(args []string, output io.Writer) error {
 	}
 
 	// No command: start interactive REPL
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Fprintln(output, "gocask service ready. Enter commands:")
+	scanner := bufio.NewScanner(input)
+	_, _ = fmt.Fprintln(output, "gocask service ready. Enter commands:")
 
 	for {
-		fmt.Fprint(output, "> ")
+		_, _ = fmt.Fprint(output, "> ")
 		if !scanner.Scan() {
 			break // EOF or error
 		}
@@ -57,7 +57,7 @@ func Run(args []string, output io.Writer) error {
 		}
 
 		if err := runCommand(db, parts, output); err != nil {
-			fmt.Fprintf(output, "Error: %v\n", err)
+			_, _ = fmt.Fprintf(output, "Error: %v\n", err)
 		}
 	}
 
@@ -77,7 +77,7 @@ func runCommand(db *Database, args []string, output io.Writer) error {
 		if err := db.Set(key, value); err != nil {
 			return fmt.Errorf("failed to set value: %w", err)
 		}
-		fmt.Fprintf(output, "SET key=%s value=%s\n", key, value)
+		_, _ = fmt.Fprintf(output, "SET key=%s value=%s\n", key, value)
 
 	case "get":
 		if len(args) < 2 {
@@ -90,16 +90,16 @@ func runCommand(db *Database, args []string, output io.Writer) error {
 			return fmt.Errorf("failed to get value: %w", err)
 		}
 		if !exists {
-			fmt.Fprintf(output, "No value for key %s\n", key)
+			_, _ = fmt.Fprintf(output, "No value for key %s\n", key)
 			return nil
 		}
-		fmt.Fprintf(output, "Value for key %s is %s\n", key, value)
+		_, _ = fmt.Fprintf(output, "Value for key %s is %s\n", key, value)
 
 	case "exit", "quit":
 		os.Exit(0) // optional: allow exiting the REPL
 
 	default:
-		fmt.Fprintf(output, "Unknown command: %s\n", command)
+		_, _ = fmt.Fprintf(output, "Unknown command: %s\n", command)
 	}
 
 	return nil

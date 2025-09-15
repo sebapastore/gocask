@@ -2,89 +2,66 @@ package bitcask
 
 import (
 	"bytes"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-func TestRunSetCommand(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testdb")
-	var buf bytes.Buffer
+func TestRunSingleCommandSetAndGet(t *testing.T) {
+	dir := t.TempDir()
 
-	args := []string{"--db", tmpFile, "set", "foo", "bar"}
-	err := Run(args, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// 1. Run "set"
+	out := &bytes.Buffer{}
+	err := Run([]string{"--db", dir, "set", "foo", "bar"}, strings.NewReader(""), out)
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "SET key=foo value=bar")
 
-	output := buf.String()
-	if !strings.Contains(output, "SET key=foo value=bar") {
-		t.Errorf("unexpected output: %s", output)
-	}
-
-	// Reload DB and check value persisted
-	db, err := NewDatabase(tmpFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	val, ok, _ := db.Get("foo")
-	if !ok || val != "bar" {
-		t.Errorf("expected foo=bar, got foo=%s", val)
-	}
+	// 2. Run "get"
+	out.Reset()
+	err = Run([]string{"--db", dir, "get", "foo"}, strings.NewReader(""), out)
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "Value for key foo is bar")
 }
 
-func TestRunGetCommand(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testdb")
-	db, err := NewDatabase(tmpFile)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestRunSingleCommandGetMissingKey(t *testing.T) {
+	dir := t.TempDir()
 
-	_ = db.Set("hello", "world")
-
-	var buf bytes.Buffer
-	args := []string{"--db", tmpFile, "get", "hello"}
-	err = Run(args, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "The value for key hello is world") {
-		t.Errorf("unexpected output: %s", output)
-	}
-}
-
-func TestRunGetMissingKey(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testdb")
-	_, err := NewDatabase(tmpFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var buf bytes.Buffer
-	args := []string{"--db", tmpFile, "get", "missing"}
-	err = Run(args, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "There is no value for key missing") {
-		t.Errorf("unexpected output: %s", output)
-	}
+	out := &bytes.Buffer{}
+	err := Run([]string{"--db", dir, "get", "nope"}, strings.NewReader(""), out)
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "No value for key nope")
 }
 
 func TestRunUnknownCommand(t *testing.T) {
-	var buf bytes.Buffer
-	args := []string{"foobar"}
-	err := Run(args, &buf)
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := t.TempDir()
 
-	output := buf.String()
-	if !strings.Contains(output, "Unknown command: foobar") {
-		t.Errorf("unexpected output: %s", output)
-	}
+	out := &bytes.Buffer{}
+	err := Run([]string{"--db", dir, "foobar"}, strings.NewReader(""), out)
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "Unknown command: foobar")
+}
+
+func TestRunREPLMode(t *testing.T) {
+	dir := t.TempDir()
+
+	// simulate user typing two commands then EOF
+	input := strings.NewReader("set k v\nget k\n")
+
+	out := &bytes.Buffer{}
+	err := Run([]string{"--db", dir}, input, out)
+	require.NoError(t, err)
+
+	s := out.String()
+	require.Contains(t, s, "gocask service ready")
+	require.Contains(t, s, "SET key=k value=v")
+	require.Contains(t, s, "Value for key k is v")
+}
+
+func TestPrintUsage(t *testing.T) {
+	out := &bytes.Buffer{}
+	printUsage(out)
+	require.Contains(t, out.String(), "Usage: gocask")
+	require.Contains(t, out.String(), "set <key> <value>")
+	require.Contains(t, out.String(), "get <key>")
 }

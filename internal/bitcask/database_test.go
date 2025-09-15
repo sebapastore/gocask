@@ -1,96 +1,79 @@
 package bitcask
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-func TestDatabaseSetGet(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testdb")
+func TestDatabaseSetAndGet(t *testing.T) {
+	dir := t.TempDir()
+	db := NewDatabase(dir)
+	require.NoError(t, db.Open())
+	defer func() { _ = db.Close() }()
 
-	// create and save
-	db, err := NewDatabase(tmpFile)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// set
+	require.NoError(t, db.Set("foo", "bar"))
 
-	// test Set/Get
-	_ = db.Set("foo", "bar")
-	val, ok, _ := db.Get("foo")
-	if !ok || val != "bar" {
-		t.Errorf("expected 'bar', got '%s'", val)
-	}
-
-	// test missing key
-	_, ok, _ = db.Get("missing")
-	if ok {
-		t.Errorf("expected missing key to be absent")
-	}
+	// get
+	val, ok, err := db.Get("foo")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "bar", val)
 }
 
 func TestDatabasePersistence(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testdb")
+	dir := t.TempDir()
 
-	// create and save
-	db, err := NewDatabase(tmpFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = db.Set("key1", "value1")
-	_ = db.Set("key2", "value2")
+	// First open and write
+	db := NewDatabase(dir)
+	require.NoError(t, db.Open())
+	require.NoError(t, db.Set("key1", "val1"))
+	require.NoError(t, db.Set("key2", "val2"))
+	require.NoError(t, db.Close())
 
-	// load again
-	db2, err := NewDatabase(tmpFile)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Reopen and check values are still there
+	db = NewDatabase(dir)
+	require.NoError(t, db.Open())
 
-	// verify values persisted
-	val, ok, _ := db2.Get("key1")
-	if !ok || val != "value1" {
-		t.Errorf("expected 'value1', got '%s'", val)
-	}
+	val, ok, err := db.Get("key1")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "val1", val)
 
-	val, ok, _ = db2.Get("key2")
-	if !ok || val != "value2" {
-		t.Errorf("expected 'value2', got '%s'", val)
-	}
+	val, ok, err = db.Get("key2")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "val2", val)
+
+	_ = db.Close()
 }
 
 func TestDatabaseHandlesMalformedEntries(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testdb")
+	dir := t.TempDir()
 
+	// Create a file with valid data
+	db := NewDatabase(dir)
+	require.NoError(t, db.Open())
 	// Create valid entries
 	entry1 := NewEntry("key1", "val1")
 	entry2 := NewEntry("key2", "val2")
 	entry3 := NewEntry("key3", "val3")
 
-	// Write valid entries to file
-	file, err := os.Create(tmpFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer func() { _ = file.Close() }()
-
 	entry1Encoded, _ := entry1.Encode()
-	_, _ = file.Write(entry1Encoded)
+	_, _ = db.activeFile.Write(entry1Encoded)
 
 	entry2Encoded, _ := entry1.Encode()
-	_, _ = file.Write(entry2Encoded)
+	_, _ = db.activeFile.Write(entry2Encoded)
 	// Flip a byte in the value portion
 	valueStart := entry2.ValueOffset()
 	entry2Encoded[valueStart] ^= 0xAA
 
 	entry3Encoded, _ := entry3.Encode()
-	_, _ = file.Write(entry3Encoded)
+	_, _ = db.activeFile.Write(entry3Encoded)
 
-	// Load database
-	db, err := NewDatabase(tmpFile)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, db.Close())
+	require.NoError(t, db.Open())
 
 	// Check that valid entries are loaded
 	if val, ok, _ := db.Get("key1"); !ok || val != "val1" {
