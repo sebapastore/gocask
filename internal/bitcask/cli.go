@@ -23,7 +23,7 @@ func Run(args []string, input io.Reader, output io.Writer) error {
 	flags.Usage = func() { printUsage(output) }
 
 	// Open DB
-	db := NewDatabase(dbPath)
+	db := NewDatabase(dbPath, 0)
 	if err := db.Open(); err != nil {
 		return err
 	}

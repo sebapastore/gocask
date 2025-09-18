@@ -8,7 +8,7 @@ import (
 
 func TestDatabaseSetAndGet(t *testing.T) {
 	dir := t.TempDir()
-	db := NewDatabase(dir)
+	db := NewDatabase(dir, 0)
 	require.NoError(t, db.Open())
 	defer func() { _ = db.Close() }()
 
@@ -26,14 +26,14 @@ func TestDatabasePersistence(t *testing.T) {
 	dir := t.TempDir()
 
 	// First open and write
-	db := NewDatabase(dir)
+	db := NewDatabase(dir, 0)
 	require.NoError(t, db.Open())
 	require.NoError(t, db.Set("key1", "val1"))
 	require.NoError(t, db.Set("key2", "val2"))
 	require.NoError(t, db.Close())
 
 	// Reopen and check values are still there
-	db = NewDatabase(dir)
+	db = NewDatabase(dir, 0)
 	require.NoError(t, db.Open())
 
 	val, ok, err := db.Get("key1")
@@ -53,7 +53,7 @@ func TestDatabaseHandlesMalformedEntries(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create a file with valid data
-	db := NewDatabase(dir)
+	db := NewDatabase(dir, 0)
 	require.NoError(t, db.Open())
 	// Create valid entries
 	entry1 := NewEntry("key1", "val1")
