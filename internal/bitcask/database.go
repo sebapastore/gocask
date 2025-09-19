@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,17 +15,19 @@ import (
 const defaultMaxFileSize = 100 * 1024 * 1024 // 100 MB
 
 type KeydirEntry struct {
-	FileID    uint32
+	FileID    uint64
 	ValuePos  uint64
 	ValueSize uint32
 	Timestamp uint64
 }
 
 type Database struct {
-	maxFileSize uint64
-	keydir      map[string]KeydirEntry
-	dbPath      string
-	activeFile  *os.File
+	maxFileSize  uint64
+	keydir       map[string]KeydirEntry
+	dbPath       string
+	activeFile   *os.File
+	activeFileID uint64
+	files        map[uint64]*os.File
 }
 
 func NewDatabase(dbPath string, maxFileSize uint64) *Database {
@@ -38,6 +39,7 @@ func NewDatabase(dbPath string, maxFileSize uint64) *Database {
 		keydir:      make(map[string]KeydirEntry),
 		dbPath:      dbPath,
 		maxFileSize: maxFileSize,
+		files:       make(map[uint64]*os.File),
 	}
 }
 
@@ -49,21 +51,23 @@ func (db *Database) Open() error {
 
 	fileIDs := parseSegmentFileIDs(files)
 
-	// Create first DB file if none exists yet
+	// Create first DB file if none exists and return
 	if len(fileIDs) == 0 {
-		f, err := db.createNewDBFile(1)
+		const activeFileID = 1
+		f, err := db.createNewDBFile(activeFileID)
 		if err != nil {
 			return err
 		}
 		db.activeFile = f
+		db.activeFileID = activeFileID
+		db.files[activeFileID] = f
 		return nil
 	}
 
 	// Load keydir from all files in order
 	for _, id := range fileIDs {
-		filePath := db.getDBFilePathByID(id)
-		if err := db.loadKeydirFromFile(filePath); err != nil {
-			return fmt.Errorf("failed to load keydir from %s: %w", filePath, err)
+		if err := db.loadKeydirFromFileID(id); err != nil {
+			return fmt.Errorf("failed to load keydir from file id %d: %w", id, err)
 		}
 	}
 
@@ -75,21 +79,24 @@ func (db *Database) Open() error {
 			return fmt.Errorf("failed to open active db file: %w", err)
 		}
 		db.activeFile = f
+		db.activeFileID = activeFileID
 	}
 
 	return nil
 }
 
 func (db *Database) Close() error {
-	if db.activeFile == nil {
-		return nil
+	for _, f := range db.files {
+		if err := f.Close(); err != nil {
+			return err
+		}
 	}
-	return db.activeFile.Close()
+	return nil
 }
 
 func (db *Database) Get(key string) (string, bool, error) {
-	if db.activeFile == nil {
-		return "", false, fmt.Errorf("the database is not fully initialized: there is not active file")
+	if len(db.files) == 0 {
+		return "", false, fmt.Errorf("the database is not fully initialized: there are not db files")
 	}
 
 	meta, exists := db.keydir[key]
@@ -97,14 +104,14 @@ func (db *Database) Get(key string) (string, bool, error) {
 		return "", false, nil
 	}
 
-	// Seek to value position
-	if _, err := db.activeFile.Seek(int64(meta.ValuePos), io.SeekStart); err != nil {
+	// Seek to value position from specific file
+	if _, err := db.files[meta.FileID].Seek(int64(meta.ValuePos), io.SeekStart); err != nil {
 		return "", false, fmt.Errorf("failed to seek to value: %w", err)
 	}
 
 	// Read value
 	value := make([]byte, meta.ValueSize)
-	if _, err := db.activeFile.Read(value); err != nil {
+	if _, err := db.files[meta.FileID].Read(value); err != nil {
 		return "", false, fmt.Errorf("failed to read value: %w", err)
 	}
 
@@ -137,6 +144,7 @@ func (db *Database) Set(key string, value string) error {
 		if err := db.rotateActiveFile(); err != nil {
 			return fmt.Errorf("failed to rotate file: %w", err)
 		}
+		valuePos = entry.ValueOffset()
 	}
 
 	if _, err := db.activeFile.Write(data); err != nil {
@@ -145,7 +153,7 @@ func (db *Database) Set(key string, value string) error {
 
 	// Update keydir
 	db.keydir[key] = KeydirEntry{
-		FileID:    1, //TODO: Handle multiple files
+		FileID:    db.activeFileID,
 		ValuePos:  uint64(valuePos),
 		ValueSize: uint32(len(entry.Value)),
 		Timestamp: entry.Timestamp,
@@ -164,36 +172,36 @@ func (db *Database) createNewDBFile(fileID uint64) (*os.File, error) {
 }
 
 func (db *Database) rotateActiveFile() error {
-	currentFileID, err := extractDBFileID(db.activeFile.Name())
+	activeFileBaseName := filepath.Base(db.activeFile.Name())
+	activeFileID, err := extractDBFileID(activeFileBaseName)
 
 	if err != nil {
 		return err
 	}
 
-	newxFileID := uint64(currentFileID + 1)
+	newActiveFileID := uint64(activeFileID + 1)
 
-	f, err := db.createNewDBFile(newxFileID)
+	f, err := db.createNewDBFile(newActiveFileID)
 
 	if err != nil {
 		return fmt.Errorf("failed to rotate db file: %w", err)
 	}
 
 	db.activeFile = f
+	db.activeFileID = newActiveFileID
+	db.files[newActiveFileID] = f
 
 	return nil
 }
 
-func (db *Database) loadKeydirFromFile(filePath string) error {
+func (db *Database) loadKeydirFromFileID(fileID uint64) error {
+	filePath := db.getDBFilePathByID(fileID)
 	f, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file %s: %w", filePath, err)
 	}
 
-	defer func() {
-		if err := f.Close(); err != nil {
-			log.Printf("failed to close file: %v", err)
-		}
-	}()
+	db.files[fileID] = f
 
 	var offset uint64 = 0
 
@@ -214,8 +222,7 @@ func (db *Database) loadKeydirFromFile(filePath string) error {
 			continue
 		}
 
-		fileID := uint32(1) // TODO: implement multiple files
-		db.keydir[decodedEntry.Key] = buildKeydirEntry(fileID, offset, decodedEntry)
+		db.keydir[decodedEntry.Key] = db.buildKeydirEntry(offset, decodedEntry, fileID)
 		offset += uint64(decodedEntry.EntrySize)
 	}
 
@@ -234,6 +241,15 @@ func (db *Database) getDBFileByID(id uint64) (*os.File, error) {
 
 func (db *Database) getDBFilePathByID(id uint64) string {
 	return filepath.Join(db.dbPath, fmt.Sprintf("data.%d.cask", id))
+}
+
+func (db *Database) buildKeydirEntry(entryOffset uint64, decodedEntry *DecodedEntry, fileID uint64) KeydirEntry {
+	return KeydirEntry{
+		FileID:    fileID,
+		ValuePos:  entryOffset + headerSize + uint64(decodedEntry.KeySize),
+		ValueSize: decodedEntry.ValueSize,
+		Timestamp: decodedEntry.Timestamp,
+	}
 }
 
 func decodeNextEntry(r io.Reader) (*DecodedEntry, error) {
@@ -262,15 +278,6 @@ func decodeNextEntry(r io.Reader) (*DecodedEntry, error) {
 	return decodedEntry, nil
 }
 
-func buildKeydirEntry(fileID uint32, entryOffset uint64, decodedEntry *DecodedEntry) KeydirEntry {
-	return KeydirEntry{
-		FileID:    fileID,
-		ValuePos:  entryOffset + headerSize + uint64(decodedEntry.KeySize),
-		ValueSize: decodedEntry.ValueSize,
-		Timestamp: decodedEntry.Timestamp,
-	}
-}
-
 func parseSegmentFileIDs(files []string) []uint64 {
 	var ids []uint64
 	for _, f := range files {
@@ -291,14 +298,26 @@ func parseSegmentFileIDs(files []string) []uint64 {
 }
 
 func extractDBFileID(fileName string) (uint64, error) {
-	parts := strings.Split(fileName, ".")
-	if len(parts) < 3 {
-		return 0, fmt.Errorf("failed to extract ID from file %s: the name has less than 3 parts", fileName)
-	}
-	id, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, fmt.Errorf("failed to extract ID from file %s: %w", fileName, err)
-	}
-	return uint64(id), nil
+	// Strict format: data.<number>.cask
+	const prefix = "data."
+	const suffix = ".cask"
 
+	if !strings.HasPrefix(fileName, prefix) || !strings.HasSuffix(fileName, suffix) {
+		return 0, fmt.Errorf("invalid file name %q: must match data.<number>.cask", fileName)
+	}
+
+	// cut off prefix and suffix
+	inner := strings.TrimPrefix(fileName, prefix)
+	inner = strings.TrimSuffix(inner, suffix)
+
+	if inner == "" {
+		return 0, fmt.Errorf("invalid file name %q: missing number between data. and .cask", fileName)
+	}
+
+	id, err := strconv.ParseUint(inner, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse ID from file %q: %w", fileName, err)
+	}
+
+	return id, nil
 }
