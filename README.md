@@ -59,12 +59,10 @@ This project also has a GitHub Actions CI workflow that runs tests and lint chec
 
 ## Todo / Next Steps
 
-- Review and refactor the code if needed before continuing.
-- Support multiple database files with a maximum file size (configurable?).
+- Improve testing.
 - Implement entry deletions.
-- Implement the merge functionality of Bitcask.
+- Implement merge functionality.
 - Prevent data loss during merge.
-- Consider building a network server and support RESP protocol. 
 
 ## References
 
