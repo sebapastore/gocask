@@ -29,18 +29,26 @@ git config core.hooksPath .githooks
 You can interact with the Bitcask database using `go run`:
 
 ```bash
-Usage: go run cmd/gocask/main.go [options] <command> [args]
+Usage: gocask [options] <command> [args]
 
 Options:
   --db <path>     Path to the database (default "./database")
+  -h, --help      Show this help message
 
-Commands:
+Commands (single-command mode):
   set <key> <value>     Store a value
   get <key>             Retrieve a value
+  del <key>             Delete a value
+
+Interactive mode:
+  Simply run 'gocask' without commands to enter interactive REPL.
+  Type commands like 'set <key> <value>', 'get <key>' or 'del <key>'.
+  Use 'exit' or Ctrl+D to quit.
 
 Examples:
-  go run cmd/gocask/main.go set name Seba --db ./mydb
-  go run cmd/gocask/main.go get name --db ./mydb
+  gocask set name Sirius --db ./mydb
+  gocask get name --db ./mydb
+  gocask # enter interactive mode
 ```
 
 ### Run the test suite:
@@ -59,10 +67,17 @@ This project also has a GitHub Actions CI workflow that runs tests and lint chec
 
 ## Todo / Next Steps
 
-- Improve testing.
-- Implement entry deletions.
-- Implement merge functionality.
-- Prevent data loss during merge.
+- [x] Basic in-memory `Set` and `Get`
+- [x] `Set` and `Get` with file persistence (append-only log)
+- [x] REPL
+- [x] Support for multiple data files
+- [x] `Delete` functionality using tombstones
+- [ ] Merge/compaction functionality to clean up deleted and overwritten keys
+- [ ] Optional / future enhancements:
+  - [ ] Hint file for faster keydir loading.
+  - [ ] Configurable maximum file size.
+  - [ ] Automatic file rotation.
+  - [ ] Concurrency safety.
 
 ## References
 

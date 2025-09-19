@@ -69,7 +69,7 @@ func runCommand(db *Database, args []string, output io.Writer) error {
 
 	switch command {
 	case "set":
-		if len(args) < 3 {
+		if len(args) != 3 {
 			_, _ = fmt.Fprintln(output, "Usage: set <key> <value>")
 			return nil
 		}
@@ -80,7 +80,7 @@ func runCommand(db *Database, args []string, output io.Writer) error {
 		_, _ = fmt.Fprintf(output, "SET key=%s value=%s\n", key, value)
 
 	case "get":
-		if len(args) < 2 {
+		if len(args) != 2 {
 			_, _ = fmt.Fprintln(output, "Usage: get <key>")
 			return nil
 		}
@@ -90,10 +90,22 @@ func runCommand(db *Database, args []string, output io.Writer) error {
 			return fmt.Errorf("failed to get value: %w", err)
 		}
 		if !exists {
-			_, _ = fmt.Fprintf(output, "No value for key %s\n", key)
+			_, _ = fmt.Fprintf(output, "No value for key %q\n", key)
 			return nil
 		}
-		_, _ = fmt.Fprintf(output, "Value for key %s is %s\n", key, value)
+		_, _ = fmt.Fprintf(output, "Value for key %q is %q\n", key, value)
+
+	case "del":
+		if len(args) != 2 {
+			_, _ = fmt.Fprintln(output, "Usage: del <key>")
+			return nil
+		}
+		key := args[1]
+		err := db.Delete(key)
+		if err != nil {
+			return fmt.Errorf("failed to delete key %q: %w", key, err)
+		}
+		_, _ = fmt.Fprintf(output, "Key %q was deleted\n", key)
 
 	case "exit", "quit":
 		os.Exit(0) // optional: allow exiting the REPL
@@ -116,10 +128,11 @@ Options:
 Commands (single-command mode):
   set <key> <value>     Store a value
   get <key>             Retrieve a value
+  del <key>             Delete a value
 
 Interactive mode:
   Simply run 'gocask' without commands to enter interactive REPL.
-  Type commands like 'set <key> <value>' or 'get <key>'.
+  Type commands like 'set <key> <value>', 'get <key>' or 'del <key>'.
   Use 'exit' or Ctrl+D to quit.
 
 Examples:

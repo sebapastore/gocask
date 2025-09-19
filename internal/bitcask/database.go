@@ -2,6 +2,7 @@ package bitcask
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -13,6 +14,8 @@ import (
 )
 
 const defaultMaxFileSize = 100 * 1024 * 1024 // 100 MB
+
+var TombstoneValue = []byte{0xDE, 0xAD, 0xBE, 0xEF} // tombstone: non-ASCII/UTF-8 bytes, used to mark deletions
 
 type KeydirEntry struct {
 	FileID    uint64
@@ -115,12 +118,16 @@ func (db *Database) Get(key string) (string, bool, error) {
 		return "", false, fmt.Errorf("failed to read value: %w", err)
 	}
 
+	if bytes.Equal(value, TombstoneValue) {
+		return "", false, nil
+	}
+
 	return string(value), true, nil
 }
 
 func (db *Database) Set(key string, value string) error {
 	if db.activeFile == nil {
-		return fmt.Errorf("the database is not fully initialized: there is not active file")
+		return fmt.Errorf("the database is not fully initialized: there is not an active file")
 	}
 
 	entry := NewEntry(key, value)
@@ -160,6 +167,10 @@ func (db *Database) Set(key string, value string) error {
 	}
 
 	return nil
+}
+
+func (db *Database) Delete(key string) error {
+	return db.Set(key, string(TombstoneValue))
 }
 
 func (db *Database) createNewDBFile(fileID uint64) (*os.File, error) {

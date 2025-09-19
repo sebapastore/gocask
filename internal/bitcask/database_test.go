@@ -23,6 +23,72 @@ func TestDatabaseSetAndGet(t *testing.T) {
 	require.Equal(t, "bar", val)
 }
 
+func TestDatabaseDelete(t *testing.T) {
+	dir := t.TempDir()
+	db := NewDatabase(dir, 0)
+	require.NoError(t, db.Open())
+	defer func() { _ = db.Close() }()
+
+	// set
+	require.NoError(t, db.Set("foo", "bar"))
+
+	// delete
+	err := db.Delete("foo")
+	require.NoError(t, err)
+
+	// get
+	val, ok, err := db.Get("foo")
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Equal(t, "", val)
+}
+
+func TestDatabaseDeleteAndReWrite(t *testing.T) {
+	dir := t.TempDir()
+	db := NewDatabase(dir, 0)
+	require.NoError(t, db.Open())
+	defer func() { _ = db.Close() }()
+
+	// set
+	require.NoError(t, db.Set("foo", "bar"))
+
+	// delete
+	err := db.Delete("foo")
+	require.NoError(t, err)
+
+	// set
+	require.NoError(t, db.Set("foo", "buz"))
+
+	// get
+	val, ok, err := db.Get("foo")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "buz", val)
+}
+
+func TestDatabaseDeletePersistance(t *testing.T) {
+	dir := t.TempDir()
+	db := NewDatabase(dir, 0)
+	require.NoError(t, db.Open())
+
+	// set
+	require.NoError(t, db.Set("foo", "bar"))
+
+	// delete
+	err := db.Delete("foo")
+	require.NoError(t, err)
+
+	// Close an reopen the database
+	_ = db.Close()
+	_ = db.Open()
+
+	// get
+	val, ok, err := db.Get("foo")
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Equal(t, "", val)
+}
+
 func TestDatabasePersistence(t *testing.T) {
 	dir := t.TempDir()
 
@@ -93,7 +159,7 @@ func TestDatabaseHandlesMalformedEntries(t *testing.T) {
 
 func TestFileRotationOnMaxSize(t *testing.T) {
 	dir := t.TempDir()
-	db := NewDatabase(dir, 70)
+	db := NewDatabase(dir, 70) // 70 bytes
 	require.NoError(t, db.Open())
 	defer func() { _ = db.Close() }()
 
@@ -118,13 +184,13 @@ func TestFileRotationOnMaxSize(t *testing.T) {
 
 func TestGetValuesAcrossFiles(t *testing.T) {
 	dir := t.TempDir()
-	db := NewDatabase(dir, 70)
+	db := NewDatabase(dir, 70) // 70 bytes
 	require.NoError(t, db.Open())
 	defer func() { _ = db.Close() }()
 
-	_ = db.Set("key1", "value1")
-	_ = db.Set("key2", "value2")
-	_ = db.Set("key3", "value3")
+	_ = db.Set("key1", "value1") // 30 bytes
+	_ = db.Set("key2", "value2") // 30 bytes
+	_ = db.Set("key3", "value3") // 30 bytes
 
 	val, ok, err := db.Get("key1")
 	require.NoError(t, err)
@@ -142,14 +208,14 @@ func TestGetValuesAcrossFiles(t *testing.T) {
 	require.Equal(t, "value3", val)
 }
 
-func TestPersistenceAcrossFilesAfterReopen(t *testing.T) {
+func TestPersistenceAcrossFiles(t *testing.T) {
 	dir := t.TempDir()
-	db := NewDatabase(dir, 70)
+	db := NewDatabase(dir, 70) // 70 bytes
 	require.NoError(t, db.Open())
 
-	_ = db.Set("key1", "value1")
-	_ = db.Set("key2", "value2")
-	_ = db.Set("key3", "value3")
+	_ = db.Set("key1", "value1") // 30 bytes
+	_ = db.Set("key2", "value2") // 30 bytes
+	_ = db.Set("key3", "value3") // 30 bytes
 	_ = db.Close()
 
 	require.NoError(t, db.Open())
@@ -163,6 +229,64 @@ func TestPersistenceAcrossFilesAfterReopen(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, "value2", val)
+
+	val, ok, err = db.Get("key3")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "value3", val)
+
+	_ = db.Close()
+}
+
+func TestDeletionAcrossFiles(t *testing.T) {
+	dir := t.TempDir()
+	db := NewDatabase(dir, 70) // 70 bytes
+	require.NoError(t, db.Open())
+	defer func() { _ = db.Close() }()
+
+	_ = db.Set("key1", "value1") // 30 bytes
+	_ = db.Set("key2", "value2") // 30 bytes
+	_ = db.Set("key3", "value3") // 30 bytes
+	_ = db.Delete("key2")        // 28 bytes (tombstone has 4 bytes)
+
+	val, ok, err := db.Get("key1")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "value1", val)
+
+	val, ok, err = db.Get("key2")
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Equal(t, "", val)
+
+	val, ok, err = db.Get("key3")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "value3", val)
+}
+
+func TestDeletetionPersistenceAcrossFiles(t *testing.T) {
+	dir := t.TempDir()
+	db := NewDatabase(dir, 70)
+	require.NoError(t, db.Open())
+
+	_ = db.Set("key1", "value1") // 30 bytes
+	_ = db.Set("key2", "value2") // 30 bytes
+	_ = db.Set("key3", "value3") // 30 bytes
+	_ = db.Delete("key2")        // 28 bytes (tombstone has 4 bytes)
+	_ = db.Close()
+
+	require.NoError(t, db.Open())
+
+	val, ok, err := db.Get("key1")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "value1", val)
+
+	val, ok, err = db.Get("key2")
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Equal(t, "", val)
 
 	val, ok, err = db.Get("key3")
 	require.NoError(t, err)

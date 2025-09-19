@@ -21,7 +21,7 @@ func TestRunSingleCommandSetAndGet(t *testing.T) {
 	out.Reset()
 	err = Run([]string{"--db", dir, "get", "foo"}, strings.NewReader(""), out)
 	require.NoError(t, err)
-	require.Contains(t, out.String(), "Value for key foo is bar")
+	require.Contains(t, out.String(), "Value for key \"foo\" is \"bar\"")
 }
 
 func TestRunSingleCommandGetMissingKey(t *testing.T) {
@@ -30,7 +30,7 @@ func TestRunSingleCommandGetMissingKey(t *testing.T) {
 	out := &bytes.Buffer{}
 	err := Run([]string{"--db", dir, "get", "nope"}, strings.NewReader(""), out)
 	require.NoError(t, err)
-	require.Contains(t, out.String(), "No value for key nope")
+	require.Contains(t, out.String(), "No value for key \"nope\"")
 }
 
 func TestRunUnknownCommand(t *testing.T) {
@@ -55,7 +55,7 @@ func TestRunREPLMode(t *testing.T) {
 	s := out.String()
 	require.Contains(t, s, "gocask service ready")
 	require.Contains(t, s, "SET key=k value=v")
-	require.Contains(t, s, "Value for key k is v")
+	require.Contains(t, s, "Value for key \"k\" is \"v\"")
 }
 
 func TestPrintUsage(t *testing.T) {
